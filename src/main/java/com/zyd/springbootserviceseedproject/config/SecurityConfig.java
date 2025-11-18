@@ -1,6 +1,8 @@
 package com.zyd.springbootserviceseedproject.config;
 
 import com.zyd.springbootserviceseedproject.filter.JwtAuthenticationTokenFilter;
+import com.zyd.springbootserviceseedproject.filter.LoginAttemptFilter;
+import com.zyd.springbootserviceseedproject.handler.LoginFailureHandlerImpl;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -10,6 +12,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -46,6 +49,12 @@ public class SecurityConfig {
 
     @Resource
     private UserDetailsService userDetailsService;  // 需要注入自定义的用户详情服务
+
+    @Resource
+    private LoginFailureHandlerImpl loginFailureHandler;
+
+    @Resource
+    private LoginAttemptFilter loginAttemptFilter;
 
     // 创建BCryptPasswordEncoder注入容器
     @Bean
@@ -87,9 +96,15 @@ public class SecurityConfig {
                         // 配置权限不足处理器
                         .accessDeniedHandler(accessDeniedHandler)
                 )
+                // 配置登录失败处理器
+                .formLogin(form -> form
+                        .failureHandler(loginFailureHandler)
+                )
                 // 配置跨域
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()));
 
+        // 添加登录尝试限制过滤器
+        http.addFilterBefore(loginAttemptFilter, UsernamePasswordAuthenticationFilter.class);
         // 添加JWT过滤器，放在UsernamePasswordAuthenticationFilter之前
         http.addFilterBefore(jwtAuthenticationTokenFilter, UsernamePasswordAuthenticationFilter.class);
 

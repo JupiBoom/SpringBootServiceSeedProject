@@ -7,15 +7,18 @@ import com.zyd.springbootserviceseedproject.bean.LoginUser;
 import com.zyd.springbootserviceseedproject.cache.RedisCache;
 import com.zyd.springbootserviceseedproject.common.Result;
 import com.zyd.springbootserviceseedproject.entity.UserEntity;
+import com.zyd.springbootserviceseedproject.filter.LoginAttemptFilter;
 import com.zyd.springbootserviceseedproject.manager.JwtTokenManager;
 import com.zyd.springbootserviceseedproject.service.UserService;
 import com.zyd.springbootserviceseedproject.utils.JwtUtil;
+import com.zyd.springbootserviceseedproject.utils.PasswordValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -49,6 +52,12 @@ public class UserController {
     @Autowired
     private RestTemplate restTemplate;
 
+    @Autowired
+    private LoginAttemptFilter loginAttemptFilter;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @RequestMapping("/list")
     public Result list() {
         List<UserEntity> list = userService.list();
@@ -67,6 +76,8 @@ public class UserController {
         //如果认证通过了，使用userid生成一个jwt jwt存入ResponseResult返回
         LoginUser loginUser = (LoginUser) authenticate.getPrincipal();
         UserEntity userEntity = loginUser.getUser();
+        // 清除登录失败记录
+        loginAttemptFilter.clearFailedAttempts(user.getNo());
         String userId = userEntity.getId() + "";
         String jwtTokenByUserId = jwtTokenManager.getJwtTokenByUserId(userId); //redis中获取是否用户有历史token
         if (org.springframework.util.StringUtils.hasText(jwtTokenByUserId)) {
@@ -80,6 +91,44 @@ public class UserController {
         res.put("user", userEntity);
         res.put("token", jwt);
         return Result.success(res);
+    }
+
+    /**
+     * 用户注册接口
+     * @param user 用户信息
+     * @return 注册结果
+     */
+    @PostMapping("/register")
+    public Result register(@RequestBody UserEntity user) {
+        // 验证密码强度
+        if (!PasswordValidator.validatePasswordStrength(user.getPassword())) {
+            return Result.fail(400, PasswordValidator.getPasswordStrengthTips());
+        }
+
+        // 检查用户名是否已存在
+        UserEntity existingUser = userService.lambdaQuery()
+                .eq(UserEntity::getNo, user.getNo())
+                .one();
+        if (existingUser != null) {
+            return Result.fail(400, "用户名已存在");
+        }
+
+        // 密码加密
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
+        // 设置默认部门ID（如果有）
+        if (user.getDeptId() == null) {
+            user.setDeptId(1); // 默认部门ID为1
+        }
+        // 设置用户状态为有效
+        user.setIsValid("Y");
+
+        // 保存用户信息
+        boolean save = userService.save(user);
+        if (save) {
+            return Result.success("注册成功");
+        } else {
+            return Result.fail(500, "注册失败");
+        }
     }
 
     /**
