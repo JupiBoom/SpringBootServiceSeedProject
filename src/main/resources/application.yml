@@ -22,6 +22,20 @@ spring:
       file-size-threshold: 0
       # 临时文件位置
       location: ${java.io.tmpdir}
+  main:
+    allow-bean-definition-overriding: true
+  mail:
+    host: smtp.qq.com
+    port: 587
+    username: your-email@qq.com
+    password: your-email-password
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
 
 # 文件上传配置
 file:
@@ -43,3 +57,18 @@ mybatis-plus:
 
 logging:
   config: classpath:log4j2.xml
+
+# Actuator 配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus,health,info
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+
