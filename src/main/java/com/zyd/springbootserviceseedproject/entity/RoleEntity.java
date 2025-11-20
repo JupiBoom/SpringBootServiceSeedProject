@@ -38,6 +38,14 @@ public class RoleEntity implements Serializable {
      */
     private String roleKey;
 
+    public String getRoleKey() {
+        return roleKey;
+    }
+
+    public void setRoleKey(String roleKey) {
+        this.roleKey = roleKey;
+    }
+
     /**
      * 显示顺序
      */
