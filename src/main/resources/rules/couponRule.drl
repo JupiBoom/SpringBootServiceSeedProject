@@ -1,0 +1,31 @@
+package com.zyd.springbootserviceseedproject.rules
+
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionRule
+import com.zyd.springbootserviceseedproject.entity.promotion.CouponRule
+import com.zyd.springbootserviceseedproject.entity.promotion.UserCoupon
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionCalculationResult
+
+// 优惠券规则
+rule "CouponRule"
+    when
+        $rule : CouponRule(type == 3, status == 1)
+        $userCoupon : UserCoupon(couponRuleId == $rule.getId(), status == 0)
+        $result : PromotionCalculationResult(originalAmount >= $rule.minAmount)
+    then
+        // 计算优惠券优惠金额
+        BigDecimal discount = $rule.getCouponValue();
+        // 检查优惠上限
+        if ($rule.maxDiscount != null && discount.compareTo($rule.maxDiscount) > 0) {
+            discount = $rule.maxDiscount;
+        }
+        // 更新优惠金额
+        $result.setDiscountAmount($result.getDiscountAmount().add(discount));
+        // 更新最终金额
+        $result.setFinalAmount($result.getFinalAmount().subtract(discount));
+        // 添加使用的规则ID
+        $result.setUsedRuleIds($result.getUsedRuleIds() + "," + $rule.getId());
+        // 添加使用的优惠券ID
+        $result.setUsedCouponIds($result.getUsedCouponIds() + "," + $userCoupon.getId());
+        // 添加优惠明细
+        $result.setDiscountDetails($result.getDiscountDetails() + "优惠券优惠" + discount + ";");
+end

@@ -1,0 +1,27 @@
+package com.zyd.springbootserviceseedproject.rules
+
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionRule
+import com.zyd.springbootserviceseedproject.entity.promotion.FullReductionRule
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionCalculationResult
+
+// 满减规则
+rule "FullReductionRule"
+    when
+        $rule : FullReductionRule(type == 1, status == 1)
+        $result : PromotionCalculationResult(originalAmount >= $rule.fullAmount)
+    then
+        // 计算满减优惠金额
+        BigDecimal discount = $rule.reduceAmount;
+        // 检查优惠上限
+        if ($rule.maxDiscount != null && discount.compareTo($rule.maxDiscount) > 0) {
+            discount = $rule.maxDiscount;
+        }
+        // 更新优惠金额
+        $result.setDiscountAmount($result.getDiscountAmount().add(discount));
+        // 更新最终金额
+        $result.setFinalAmount($result.getFinalAmount().subtract(discount));
+        // 添加使用的规则ID
+        $result.setUsedRuleIds($result.getUsedRuleIds() + "," + $rule.getId());
+        // 添加优惠明细
+        $result.setDiscountDetails($result.getDiscountDetails() + "满" + $rule.fullAmount + "减" + discount + ";");
+end

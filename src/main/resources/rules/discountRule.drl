@@ -1,0 +1,27 @@
+package com.zyd.springbootserviceseedproject.rules
+
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionRule
+import com.zyd.springbootserviceseedproject.entity.promotion.DiscountRule
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionCalculationResult
+
+// 折扣规则
+rule "DiscountRule"
+    when
+        $rule : DiscountRule(type == 2, status == 1)
+        $result : PromotionCalculationResult()
+    then
+        // 计算折扣优惠金额
+        BigDecimal discount = $result.getOriginalAmount().multiply(BigDecimal.ONE.subtract($rule.getDiscountValue().divide(new BigDecimal(100))));
+        // 检查优惠上限
+        if ($rule.maxDiscount != null && discount.compareTo($rule.maxDiscount) > 0) {
+            discount = $rule.maxDiscount;
+        }
+        // 更新优惠金额
+        $result.setDiscountAmount($result.getDiscountAmount().add(discount));
+        // 更新最终金额
+        $result.setFinalAmount($result.getFinalAmount().subtract(discount));
+        // 添加使用的规则ID
+        $result.setUsedRuleIds($result.getUsedRuleIds() + "," + $rule.getId());
+        // 添加优惠明细
+        $result.setDiscountDetails($result.getDiscountDetails() + $rule.getDiscountValue() + "折优惠" + discount + ";");
+end
