@@ -1,0 +1,118 @@
+package com.zyd.springbootserviceseedproject.rules.discount.combination
+
+import com.zyd.springbootserviceseedproject.entity.promotion.DiscountResult;
+import com.zyd.springbootserviceseedproject.entity.promotion.DiscountDetail;
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionRule;
+import com.zyd.springbootserviceseedproject.entity.promotion.Coupon;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.ArrayList;
+
+// 优惠叠加策略：促销规则+优惠券
+rule "Promotion and Coupon Combination"
+    salience 200
+    when
+        $discountResult : DiscountResult()
+        exists DiscountDetail(discountType in (1, 2, 3)) // 存在促销优惠
+        exists DiscountDetail(discountType == 4) // 存在优惠券优惠
+    then
+        // 促销规则和优惠券可以叠加使用
+        // 这里可以实现具体的叠加策略逻辑
+end
+
+// 优惠互斥规则：同一类型的促销规则不能叠加
+rule "Exclusive Promotion Rules"
+    salience 150
+    when
+        $discountResult : DiscountResult()
+        $detail1 : DiscountDetail(discountType in (1, 2, 3), $type : discountType)
+        $detail2 : DiscountDetail(discountType == $type, this != $detail1)
+    then
+        // 同一类型的促销规则不能叠加，保留优惠金额大的
+        if ($detail1.getDiscountAmount().compareTo($detail2.getDiscountAmount()) < 0) {
+            $discountResult.getDiscountDetailList().remove($detail1);
+            $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().subtract($detail1.getDiscountAmount()));
+            $discountResult.setPlatformCost($discountResult.getPlatformCost().subtract($detail1.getPlatformCost()));
+        } else {
+            $discountResult.getDiscountDetailList().remove($detail2);
+            $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().subtract($detail2.getDiscountAmount()));
+            $discountResult.setPlatformCost($discountResult.getPlatformCost().subtract($detail2.getPlatformCost()));
+        }
+        update($discountResult);
+end
+
+// 最优优惠组合推荐
+rule "Optimal Discount Combination Recommendation"
+    salience 100
+    when
+        $discountResult : DiscountResult()
+        $allResults : List() from collect(DiscountResult())
+        eval($allResults.size() > 1)
+    then
+        // 从所有可能的优惠组合中选择最优的
+        DiscountResult optimalResult = null;
+        BigDecimal maxDiscount = BigDecimal.ZERO;
+        
+        for (Object obj : $allResults) {
+            DiscountResult result = (DiscountResult) obj;
+            if (result.getTotalDiscountAmount().compareTo(maxDiscount) > 0) {
+                maxDiscount = result.getTotalDiscountAmount();
+                optimalResult = result;
+            }
+        }
+        
+        if (optimalResult != null) {
+            optimalResult.setIsOptimal(1);
+            // 标记其他结果为非最优
+            for (Object obj : $allResults) {
+                DiscountResult result = (DiscountResult) obj;
+                if (result != optimalResult) {
+                    result.setIsOptimal(0);
+                }
+            }
+        }
+end
+
+// 平台成本约束规则
+rule "Platform Cost Constraint"
+    salience 50
+    when
+        $discountResult : DiscountResult(platformCost > new BigDecimal("100.00")) // 假设平台成本上限为100元
+    then
+        // 超过平台成本上限，需要调整优惠组合
+        List<DiscountDetail> details = $discountResult.getDiscountDetailList();
+        BigDecimal excessCost = $discountResult.getPlatformCost().subtract(new BigDecimal("100.00"));
+        
+        // 按优惠金额从大到小排序，优先减少大额优惠
+        details.sort((d1, d2) -> d2.getDiscountAmount().compareTo(d1.getDiscountAmount()));
+        
+        for (DiscountDetail detail : details) {
+            if (excessCost.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+            
+            BigDecimal reduceAmount = excessCost.min(detail.getDiscountAmount());
+            detail.setDiscountAmount(detail.getDiscountAmount().subtract(reduceAmount));
+            detail.setPlatformCost(detail.getPlatformCost().subtract(reduceAmount));
+            
+            $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().subtract(reduceAmount));
+            $discountResult.setPlatformCost($discountResult.getPlatformCost().subtract(reduceAmount));
+            excessCost = excessCost.subtract(reduceAmount);
+        }
+        update($discountResult);
+end
+
+// 最终优惠计算
+rule "Final Discount Calculation"
+    salience 10
+    when
+        $discountResult : DiscountResult()
+    then
+        // 计算优惠后总价
+        BigDecimal discountedTotal = $discountResult.getOriginalTotalAmount().subtract($discountResult.getTotalDiscountAmount());
+        if (discountedTotal.compareTo(BigDecimal.ZERO) < 0) {
+            discountedTotal = BigDecimal.ZERO;
+        }
+        $discountResult.setDiscountedTotalAmount(discountedTotal);
+        update($discountResult);
+end

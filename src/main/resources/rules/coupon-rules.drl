@@ -1,0 +1,120 @@
+package com.zyd.springbootserviceseedproject.rules.coupon
+
+import com.zyd.springbootserviceseedproject.entity.promotion.Coupon;
+import com.zyd.springbootserviceseedproject.entity.promotion.UserCoupon;
+import com.zyd.springbootserviceseedproject.entity.promotion.CartItem;
+import com.zyd.springbootserviceseedproject.entity.promotion.DiscountResult;
+import com.zyd.springbootserviceseedproject.entity.promotion.DiscountDetail;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+
+// 满减券使用规则
+rule "Full Reduction Coupon Usage"
+    when
+        $userCoupon : UserCoupon(useStatus == 1)
+        $coupon : Coupon(id == $userCoupon.couponId, couponType == 1, status == 1)
+        $discountResult : DiscountResult(originalTotalAmount >= $coupon.minConsumeAmount)
+        eval($userCoupon.getEndTime().isAfter(LocalDateTime.now()))
+    then
+        BigDecimal discountAmount = $coupon.getCouponAmount();
+        if (discountAmount.compareTo($discountResult.getOriginalTotalAmount()) > 0) {
+            discountAmount = $discountResult.getOriginalTotalAmount();
+        }
+        
+        DiscountDetail detail = new DiscountDetail();
+        detail.setDiscountType(4);
+        detail.setDiscountName($coupon.getCouponName());
+        detail.setApplicableProductIds("全场");
+        detail.setDiscountAmount(discountAmount);
+        detail.setPlatformCost(discountAmount);
+        detail.setCouponId($coupon.getId());
+        detail.setUserCouponId($userCoupon.getId());
+        detail.setDescription("满" + $coupon.getMinConsumeAmount() + "减" + discountAmount);
+        
+        $discountResult.getDiscountDetailList().add(detail);
+        $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().add(discountAmount));
+        $discountResult.setPlatformCost($discountResult.getPlatformCost().add(discountAmount));
+        $discountResult.setUsedCouponIds($discountResult.getUsedCouponIds() + "," + $coupon.getId());
+        update($discountResult);
+end
+
+// 折扣券使用规则
+rule "Discount Coupon Usage"
+    when
+        $userCoupon : UserCoupon(useStatus == 1)
+        $coupon : Coupon(id == $userCoupon.couponId, couponType == 2, status == 1)
+        $discountResult : DiscountResult()
+        eval($userCoupon.getEndTime().isAfter(LocalDateTime.now()))
+    then
+        BigDecimal originalPrice = $discountResult.getOriginalTotalAmount();
+        BigDecimal discountRate = new BigDecimal($coupon.getDiscountRate()).divide(new BigDecimal(100));
+        BigDecimal discountAmount = originalPrice.subtract(originalPrice.multiply(discountRate));
+        
+        DiscountDetail detail = new DiscountDetail();
+        detail.setDiscountType(4);
+        detail.setDiscountName($coupon.getCouponName());
+        detail.setApplicableProductIds("全场");
+        detail.setDiscountAmount(discountAmount);
+        detail.setPlatformCost(discountAmount);
+        detail.setCouponId($coupon.getId());
+        detail.setUserCouponId($userCoupon.getId());
+        detail.setDescription($coupon.getDiscountRate() / 10.0 + "折优惠券");
+        
+        $discountResult.getDiscountDetailList().add(detail);
+        $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().add(discountAmount));
+        $discountResult.setPlatformCost($discountResult.getPlatformCost().add(discountAmount));
+        $discountResult.setUsedCouponIds($discountResult.getUsedCouponIds() + "," + $coupon.getId());
+        update($discountResult);
+end
+
+// 无门槛券使用规则
+rule "No Threshold Coupon Usage"
+    when
+        $userCoupon : UserCoupon(useStatus == 1)
+        $coupon : Coupon(id == $userCoupon.couponId, couponType == 3, status == 1)
+        $discountResult : DiscountResult()
+        eval($userCoupon.getEndTime().isAfter(LocalDateTime.now()))
+    then
+        BigDecimal discountAmount = $coupon.getCouponAmount();
+        if (discountAmount.compareTo($discountResult.getOriginalTotalAmount()) > 0) {
+            discountAmount = $discountResult.getOriginalTotalAmount();
+        }
+        
+        DiscountDetail detail = new DiscountDetail();
+        detail.setDiscountType(4);
+        detail.setDiscountName($coupon.getCouponName());
+        detail.setApplicableProductIds("全场");
+        detail.setDiscountAmount(discountAmount);
+        detail.setPlatformCost(discountAmount);
+        detail.setCouponId($coupon.getId());
+        detail.setUserCouponId($userCoupon.getId());
+        detail.setDescription("无门槛立减" + discountAmount);
+        
+        $discountResult.getDiscountDetailList().add(detail);
+        $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().add(discountAmount));
+        $discountResult.setPlatformCost($discountResult.getPlatformCost().add(discountAmount));
+        $discountResult.setUsedCouponIds($discountResult.getUsedCouponIds() + "," + $coupon.getId());
+        update($discountResult);
+end
+
+// 优惠券使用限制规则
+rule "Coupon Usage Limit"
+    when
+        $userCoupon : UserCoupon(useStatus == 1)
+        $coupon : Coupon(id == $userCoupon.couponId)
+        eval($userCoupon.getEndTime().isBefore(LocalDateTime.now()))
+    then
+        // 优惠券已过期，不能使用
+        insertLogical(new IllegalArgumentException("优惠券已过期: " + $coupon.getCouponName()));
+end
+
+rule "Coupon Usage Limit - Minimum Consume"
+    when
+        $userCoupon : UserCoupon(useStatus == 1)
+        $coupon : Coupon(id == $userCoupon.couponId, couponType == 1)
+        $discountResult : DiscountResult(originalTotalAmount < $coupon.minConsumeAmount)
+    then
+        // 满减券未达到最低消费金额
+        insertLogical(new IllegalArgumentException("满减券未达到最低消费金额: " + $coupon.getCouponName()));
+end

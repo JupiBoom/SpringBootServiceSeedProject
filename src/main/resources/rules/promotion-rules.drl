@@ -1,0 +1,98 @@
+package com.zyd.springbootserviceseedproject.rules.promotion
+
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionRule;
+import com.zyd.springbootserviceseedproject.entity.promotion.CartItem;
+import com.zyd.springbootserviceseedproject.entity.promotion.DiscountResult;
+import com.zyd.springbootserviceseedproject.entity.promotion.DiscountDetail;
+import java.math.BigDecimal;
+import java.util.List;
+
+// 满减规则
+rule "Full Reduction Promotion"
+    when
+        $promotionRule : PromotionRule(ruleType == 1, status == 1)
+        $cartItem : CartItem(isPromotionProduct == 1, totalPrice >= $promotionRule.fullAmount)
+        $discountResult : DiscountResult()
+    then
+        BigDecimal discountAmount = $promotionRule.reduceAmount;
+        if (discountAmount.compareTo($cartItem.totalPrice) > 0) {
+            discountAmount = $cartItem.totalPrice;
+        }
+        
+        DiscountDetail detail = new DiscountDetail();
+        detail.setDiscountType(1);
+        detail.setDiscountName($promotionRule.ruleName);
+        detail.setApplicableProductIds(String.valueOf($cartItem.getProductId()));
+        detail.setDiscountAmount(discountAmount);
+        detail.setPlatformCost(discountAmount);
+        detail.setPromotionRuleId($promotionRule.getId());
+        detail.setDescription("满" + $promotionRule.fullAmount + "减" + discountAmount);
+        
+        $discountResult.getDiscountDetailList().add(detail);
+        $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().add(discountAmount));
+        $discountResult.setPlatformCost($discountResult.getPlatformCost().add(discountAmount));
+        update($discountResult);
+end
+
+// 折扣规则
+rule "Discount Promotion"
+    when
+        $promotionRule : PromotionRule(ruleType == 2, status == 1)
+        $cartItem : CartItem(isPromotionProduct == 1)
+        $discountResult : DiscountResult()
+    then
+        BigDecimal originalPrice = $cartItem.getTotalPrice();
+        BigDecimal discountRate = new BigDecimal($promotionRule.getDiscountRate()).divide(new BigDecimal(100));
+        BigDecimal discountAmount = originalPrice.subtract(originalPrice.multiply(discountRate));
+        
+        DiscountDetail detail = new DiscountDetail();
+        detail.setDiscountType(2);
+        detail.setDiscountName($promotionRule.ruleName);
+        detail.setApplicableProductIds(String.valueOf($cartItem.getProductId()));
+        detail.setDiscountAmount(discountAmount);
+        detail.setPlatformCost(discountAmount);
+        detail.setPromotionRuleId($promotionRule.getId());
+        detail.setDescription($promotionRule.getDiscountRate() / 10.0 + "折优惠");
+        
+        $discountResult.getDiscountDetailList().add(detail);
+        $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().add(discountAmount));
+        $discountResult.setPlatformCost($discountResult.getPlatformCost().add(discountAmount));
+        update($discountResult);
+end
+
+// 买赠规则
+rule "Buy One Get One Free Promotion"
+    when
+        $promotionRule : PromotionRule(ruleType == 3, status == 1)
+        $cartItem : CartItem(isPromotionProduct == 1, quantity >= $promotionRule.buyQuantity)
+        $discountResult : DiscountResult()
+    then
+        int giftCount = $cartItem.getQuantity() / $promotionRule.buyQuantity * $promotionRule.giftQuantity;
+        BigDecimal discountAmount = $cartItem.getUnitPrice().multiply(new BigDecimal(giftCount));
+        
+        DiscountDetail detail = new DiscountDetail();
+        detail.setDiscountType(3);
+        detail.setDiscountName($promotionRule.ruleName);
+        detail.setApplicableProductIds(String.valueOf($cartItem.getProductId()));
+        detail.setDiscountAmount(discountAmount);
+        detail.setPlatformCost(discountAmount);
+        detail.setPromotionRuleId($promotionRule.getId());
+        detail.setDescription("买" + $promotionRule.buyQuantity + "赠" + $promotionRule.giftQuantity + "，共赠" + giftCount + "件");
+        
+        $discountResult.getDiscountDetailList().add(detail);
+        $discountResult.setTotalDiscountAmount($discountResult.getTotalDiscountAmount().add(discountAmount));
+        $discountResult.setPlatformCost($discountResult.getPlatformCost().add(discountAmount));
+        update($discountResult);
+end
+
+// 优先级处理规则
+rule "Promotion Priority Handling"
+    salience 100
+    when
+        $discountResult : DiscountResult()
+        $highPriorityRule : PromotionRule(priority < 5, status == 1)
+        $lowPriorityRule : PromotionRule(priority >= 5, status == 1, this != $highPriorityRule)
+    then
+        // 高优先级规则生效时，低优先级规则可能需要调整或排除
+        // 这里可以根据业务需求实现具体的优先级处理逻辑
+end
