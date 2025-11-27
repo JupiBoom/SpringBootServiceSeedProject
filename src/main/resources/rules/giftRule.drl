@@ -1,0 +1,17 @@
+package com.zyd.springbootserviceseedproject.rules
+
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionRule
+import com.zyd.springbootserviceseedproject.entity.promotion.GiftRule
+import com.zyd.springbootserviceseedproject.entity.promotion.PromotionCalculationResult
+
+// 买赠规则
+rule "GiftRule"
+    when
+        $rule : GiftRule(type == 4, status == 1)
+        $result : PromotionCalculationResult()
+    then
+        // 添加买赠明细
+        $result.setDiscountDetails($result.getDiscountDetails() + "买" + $rule.getBuyQuantity() + "赠" + $rule.getGiftQuantity() + "件" + $rule.getGiftProductName() + ";");
+        // 添加使用的规则ID
+        $result.setUsedRuleIds($result.getUsedRuleIds() + "," + $rule.getId());
+end
